@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Mundo visual único e escuro, igual ao da versão web.
+         O windowBackground evita o flash claro na abertura. -->
+    <style name="Theme.TreineAI" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ta_ink0</item>
+        <item name="android:statusBarColor">@color/ta_ink0</item>
+        <item name="android:navigationBarColor">@color/ta_ink0</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
