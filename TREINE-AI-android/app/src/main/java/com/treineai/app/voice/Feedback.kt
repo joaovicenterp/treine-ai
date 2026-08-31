@@ -73,11 +73,14 @@ class Feedback(private val context: Context) {
                     }
                     engine.setSpeechRate(rate)
                     engine.setOnUtteranceProgressListener(object : UtteranceProgressListener() {
+                        /* corpo de bloco, não de expressão: main.post devolve Boolean
+                           e a interface exige Unit — daí voltamos a fala à thread principal
+                           sem propagar o retorno */
                         override fun onStart(utteranceId: String?) {}
-                        override fun onDone(utteranceId: String?) = main.post { done() }
+                        override fun onDone(utteranceId: String?) { main.post { done() } }
                         @Deprecated("substituído pela sobrecarga com errorCode")
-                        override fun onError(utteranceId: String?) = main.post { done() }
-                        override fun onError(utteranceId: String?, errorCode: Int) = main.post { done() }
+                        override fun onError(utteranceId: String?) { main.post { done() } }
+                        override fun onError(utteranceId: String?, errorCode: Int) { main.post { done() } }
                     })
                 }
                 if (pendingFlush) { pendingFlush = false; pump() }
