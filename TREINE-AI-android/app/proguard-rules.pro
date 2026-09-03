@@ -1,8 +1,17 @@
 # MediaPipe carrega classes e bibliotecas nativas por reflexão.
 -keep class com.google.mediapipe.** { *; }
 -keep class com.google.protobuf.** { *; }
+# O MediaPipe usa flatbuffers para ler os metadados do modelo .task;
+# se o R8 remove/renomeia essas classes, o modelo não carrega e o app
+# cai no modo demonstração. Mantê-las é o que garante a pose real.
+-keep class com.google.flatbuffers.** { *; }
+# Métodos nativos (JNI) não podem ser renomeados.
+-keepclasseswithmembernames class * {
+    native <methods>;
+}
 -dontwarn com.google.mediapipe.**
 -dontwarn com.google.protobuf.**
+-dontwarn com.google.flatbuffers.**
 -dontwarn autovalue.shaded.**
 -dontwarn javax.lang.model.**
 
