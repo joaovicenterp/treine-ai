@@ -1,5 +1,13 @@
 package com.treineai.app.ui.screens
 
+import android.Manifest
+import android.content.Context
+import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -36,9 +44,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.content.ContextCompat
 import com.treineai.app.ui.AppState
 import com.treineai.app.ui.Btn
 import com.treineai.app.ui.BtnKind
@@ -76,6 +86,29 @@ import kotlinx.coroutines.delay
 @Composable
 fun PretrainScreen(app: AppState, plan: SessionPlan) {
     val ex = app.catalog.exercise(plan.current) ?: return
+    val context = LocalContext.current
+
+    /* Portão de permissão: sem câmera não há análise. Em vez de uma
+       demonstração sintética, pedimos a permissão de forma explícita e só
+       seguimos para o exercício quando ela é concedida. */
+    var hasCamera by remember { mutableStateOf(hasCameraPermission(context)) }
+    var askedOnce by remember { mutableStateOf(false) }
+    val permLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.RequestPermission()
+    ) { granted ->
+        hasCamera = granted
+        askedOnce = true
+    }
+    if (!hasCamera) {
+        CameraPermissionScreen(
+            askedOnce = askedOnce,
+            onGrant = { permLauncher.launch(Manifest.permission.CAMERA) },
+            onOpenSettings = { openAppSettings(context) },
+            onBack = { app.back() }
+        )
+        return
+    }
+
     val motion = app.motion
     val state by motion.state.collectAsState()
 
@@ -97,10 +130,13 @@ fun PretrainScreen(app: AppState, plan: SessionPlan) {
         motion.attach(ex, plan.targetReps, forceSimulation = false)
         motion.start()
         motion.pause()
-        app.feedback.say(
-            "Apoie o celular e afaste-se. Eu aviso quando você estiver na posição.",
-            p = 2, always = true
-        )
+        /* sem IA de pose não há posicionamento a guiar — o aviso na tela basta */
+        if (!motion.state.value.poseUnavailable) {
+            app.feedback.say(
+                "Apoie o celular e afaste-se. Eu aviso quando você estiver na posição.",
+                p = 2, always = true
+            )
+        }
         onDispose { }
     }
 
@@ -147,7 +183,9 @@ fun PretrainScreen(app: AppState, plan: SessionPlan) {
     LaunchedEffect(firstFrameAt) {
         if (firstFrameAt == 0L) return@LaunchedEffect
         delay(18_000)
-        /* lê o estado vivo: o `setup` capturado aqui é o do primeiro quadro */
+        /* lê o estado vivo: o `setup` capturado aqui é o do primeiro quadro.
+           Sem a IA de pose não há o que liberar — deixamos o aviso na tela. */
+        if (motion.state.value.poseUnavailable) return@LaunchedEffect
         if (!motion.state.value.setup.ready && !override) {
             override = true
             app.feedback.say(
@@ -243,9 +281,10 @@ fun PretrainScreen(app: AppState, plan: SessionPlan) {
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
                         ProviderBadge(
-                            when {
-                                state.providerId.isEmpty() -> "CARREGANDO IA"
-                                state.providerId == "simulation" -> "MODO DEMO"
+                            when (state.providerId) {
+                                "" -> "CARREGANDO IA"
+                                "simulation" -> "MODO DEMO"
+                                "none" -> "IA INDISPONÍVEL"
                                 else -> "IA ATIVA"
                             }
                         )
@@ -264,6 +303,13 @@ fun PretrainScreen(app: AppState, plan: SessionPlan) {
                     Note(
                         "Câmera indisponível neste dispositivo. Você pode treinar em modo demonstração para conhecer a análise.",
                         tone = TA.warn, icon = "camera"
+                    )
+                } else if (state.poseUnavailable) {
+                    /* câmera ok, mas a IA de pose não iniciou: aviso honesto,
+                       sem boneco executando sozinho por cima da imagem */
+                    Note(
+                        "Não consegui iniciar a análise de pose neste aparelho. Atualize o app para a versão mais recente e tente de novo.",
+                        tone = TA.bad, icon = "alert"
                     )
                 }
 
@@ -433,4 +479,95 @@ internal fun quitWorkout(app: AppState) {
 internal fun advance(app: AppState, plan: SessionPlan) {
     app.motion.detach()
     if (plan.isLast) quitWorkout(app) else app.replace(Route.Pretrain(plan.next()))
+}
+
+internal fun hasCameraPermission(context: Context): Boolean =
+    ContextCompat.checkSelfPermission(context, Manifest.permission.CAMERA) ==
+        PackageManager.PERMISSION_GRANTED
+
+/** Abre a tela de configurações do app, para quando a permissão foi negada permanentemente. */
+private fun openAppSettings(context: Context) {
+    try {
+        context.startActivity(
+            Intent(
+                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+                Uri.fromParts("package", context.packageName, null)
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        )
+    } catch (_: Exception) {
+        /* nenhuma tela de configurações disponível: nada a fazer */
+    }
+}
+
+/* ============================================================
+   Tela de permissão da câmera.
+   Substitui a antiga demonstração sintética: sem câmera não há
+   análise, então pedimos a permissão de forma clara e direta.
+   ============================================================ */
+@Composable
+private fun CameraPermissionScreen(
+    askedOnce: Boolean,
+    onGrant: () -> Unit,
+    onOpenSettings: () -> Unit,
+    onBack: () -> Unit
+) {
+    Box(Modifier.fillMaxSize().background(TA.ink0)) {
+
+        Box(
+            Modifier.align(Alignment.TopStart).padding(8.dp)
+                .size(42.dp).clip(TA.rMd).clickable(onClick = onBack),
+            contentAlignment = Alignment.Center
+        ) { Icon("close", size = 21.dp, tint = TA.cream) }
+
+        Column(
+            Modifier.align(Alignment.Center).fillMaxWidth().padding(horizontal = TA.pad),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.spacedBy(18.dp)
+        ) {
+            Box(
+                Modifier.size(84.dp).clip(TA.rXl).background(TA.flame.copy(alpha = .12f))
+                    .border(1.dp, TA.flame.copy(alpha = .35f), TA.rXl),
+                contentAlignment = Alignment.Center
+            ) { Icon("camera", size = 38.dp, tint = TA.flame) }
+
+            Text(
+                "Precisamos da permissão da câmera para fazer a análise",
+                style = MaterialTheme.typography.headlineSmall,
+                color = TA.cream,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                "As imagens são processadas no seu aparelho, em tempo real, e não saem dele.",
+                style = MaterialTheme.typography.bodyMedium,
+                color = TA.cream3,
+                textAlign = TextAlign.Center
+            )
+
+            Spacer(Modifier.height(2.dp))
+            Btn(
+                "Conceder permissão",
+                onClick = onGrant,
+                modifier = Modifier.fillMaxWidth(),
+                icon = "camera",
+                big = true
+            )
+
+            /* Se já foi negada, o pedido pode não reaparecer: oferecemos as
+               configurações do sistema como caminho alternativo. */
+            if (askedOnce) {
+                Text(
+                    "Se o pedido não aparecer, libere a câmera nas configurações do app.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = TA.cream3,
+                    textAlign = TextAlign.Center
+                )
+                Btn(
+                    "Abrir configurações",
+                    onClick = onOpenSettings,
+                    modifier = Modifier.fillMaxWidth(),
+                    kind = BtnKind.Ghost
+                )
+            }
+        }
+    }
 }
