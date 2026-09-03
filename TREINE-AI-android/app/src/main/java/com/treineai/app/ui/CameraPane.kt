@@ -63,27 +63,51 @@ fun CameraPane(
                 PackageManager.PERMISSION_GRANTED
         )
     }
+    
+    var cameraStarted by remember { mutableStateOf(false) }
+    
     val ask = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { ok ->
         granted = ok
-        if (!ok) handle.status = CamStatus.Negada
+        if (ok) {
+            handle.status = CamStatus.Ativa
+        } else {
+            handle.status = CamStatus.Negada
+        }
     }
 
+    // Inicia a câmera quando a permissão é concedida
+    LaunchedEffect(granted) {
+        if (granted && !cameraStarted) {
+            cameraStarted = true
+            source.start(owner, previewUseCase) { 
+                handle.status = CamStatus.Indisponivel 
+                cameraStarted = false
+            }
+        } else if (!granted && cameraStarted) {
+            cameraStarted = false
+            source.release()
+        }
+    }
+
+    // Pede permissão se ainda não temos
     LaunchedEffect(Unit) {
         onHandle(handle)
-        if (!granted) ask.launch(Manifest.permission.CAMERA)
-    }
-
-    LaunchedEffect(granted) {
-        if (granted) {
-            source.start(owner, previewUseCase) { handle.status = CamStatus.Indisponivel }
+        if (!granted) {
+            ask.launch(Manifest.permission.CAMERA)
+        } else {
             handle.status = CamStatus.Ativa
         }
     }
 
-    DisposableEffect(Unit) { onDispose { source.release() } }
+    DisposableEffect(Unit) { 
+        onDispose { 
+            source.release()
+            cameraStarted = false
+        } 
+    }
 
     Box(modifier) {
-        if (granted) {
+        if (granted && cameraStarted) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
                 factory = { ctx ->
