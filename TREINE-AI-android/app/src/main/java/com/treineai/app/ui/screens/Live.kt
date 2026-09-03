@@ -248,7 +248,13 @@ fun LiveScreen(app: AppState, plan: SessionPlan) {
                 ) { Icon("close", size = 21.dp, tint = TA.cream) }
 
                 Column(horizontalAlignment = Alignment.End, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    ProviderBadge(if (state.providerId == "simulation") "MODO DEMO" else "IA ATIVA")
+                    ProviderBadge(
+                        when (state.providerId) {
+                            "simulation" -> "MODO DEMO"
+                            "none" -> "IA INDISPONÍVEL"
+                            else -> "IA ATIVA"
+                        }
+                    )
                     if (app.settings.voiceCommands && app.voice.listening) ProviderBadge("OUVINDO")
                     Box(
                         Modifier.size(42.dp).clip(TA.rMd)
