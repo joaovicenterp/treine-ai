@@ -67,28 +67,37 @@ class MediaPipeProvider private constructor(private val landmarker: PoseLandmark
     companion object {
         const val MODEL_ASSET = "pose_landmarker_lite.task"
 
-        /** Tenta a GPU e cai para a CPU: aparelhos antigos falham no delegate GPU. */
+        /**
+         * Cria o detector de pose. Usa o delegate de CPU de propósito: o de GPU
+         * fica preso à thread que o criou (a principal), mas a inferência roda na
+         * thread da câmera — em muitos aparelhos isso falha e o app acabava caindo
+         * no modo demonstração. Na CPU o modelo "lite" roda de forma fluida e sem
+         * essa amarração de thread. Devolve null (com o motivo em lastError) só
+         * quando o modelo realmente não abre.
+         */
+        @Volatile
+        var lastError: String? = null; private set
+
         fun create(context: Context): MediaPipeProvider? {
-            for (delegate in listOf(Delegate.GPU, Delegate.CPU)) {
-                try {
-                    val base = BaseOptions.builder()
-                        .setModelAssetPath(MODEL_ASSET)
-                        .setDelegate(delegate)
-                        .build()
-                    val options = PoseLandmarker.PoseLandmarkerOptions.builder()
-                        .setBaseOptions(base)
-                        .setRunningMode(RunningMode.VIDEO)
-                        .setNumPoses(1)
-                        .setMinPoseDetectionConfidence(.5f)
-                        .setMinPosePresenceConfidence(.5f)
-                        .setMinTrackingConfidence(.5f)
-                        .build()
-                    return MediaPipeProvider(PoseLandmarker.createFromOptions(context, options))
-                } catch (_: Throwable) {
-                    /* tenta o próximo delegate */
-                }
+            return try {
+                val base = BaseOptions.builder()
+                    .setModelAssetPath(MODEL_ASSET)
+                    .setDelegate(Delegate.CPU)
+                    .build()
+                val options = PoseLandmarker.PoseLandmarkerOptions.builder()
+                    .setBaseOptions(base)
+                    .setRunningMode(RunningMode.VIDEO)
+                    .setNumPoses(1)
+                    .setMinPoseDetectionConfidence(.5f)
+                    .setMinPosePresenceConfidence(.5f)
+                    .setMinTrackingConfidence(.5f)
+                    .build()
+                lastError = null
+                MediaPipeProvider(PoseLandmarker.createFromOptions(context, options))
+            } catch (t: Throwable) {
+                lastError = t.message ?: t.javaClass.simpleName
+                null
             }
-            return null
         }
     }
 }
