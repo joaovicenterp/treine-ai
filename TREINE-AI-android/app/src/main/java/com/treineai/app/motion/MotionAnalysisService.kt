@@ -32,7 +32,9 @@ data class MotionState(
     val holdSeconds: Double = 0.0,
     val blocked: Boolean = false,
     val running: Boolean = false,
-    val paused: Boolean = false
+    val paused: Boolean = false,
+    /** Câmera liberada, mas a IA de pose não pôde iniciar neste aparelho. */
+    val poseUnavailable: Boolean = false
 )
 
 class MotionAnalysisService(private val context: Context) {
@@ -49,12 +51,20 @@ class MotionAnalysisService(private val context: Context) {
     private var analyzer: Analyzer? = null
     private var exercise: Exercise? = null
 
-    /** Escolhe a pose real; cai para a simulação se o modelo não abrir. */
+    /**
+     * Liga a pose real. O acesso à câmera é garantido antes, pela tela de
+     * permissão, então aqui é sempre MediaPipe. Se ele não abrir neste aparelho,
+     * o provider fica nulo e a interface mostra a câmera com um aviso — nunca um
+     * boneco executando por conta própria. O atleta sintético só é usado quando
+     * explicitamente pedido (forceSimulation), o que a interface não faz.
+     */
     fun attach(exercise: Exercise, targetReps: Int, forceSimulation: Boolean = false) {
         detach()
         this.exercise = exercise
-        val p: PoseProvider = (if (forceSimulation) null else MediaPipeProvider.create(context))
-            ?: SimulationProvider(exercise.pattern, exercise.rep)
+
+        val p: PoseProvider? =
+            if (forceSimulation) SimulationProvider(exercise.pattern, exercise.rep)
+            else MediaPipeProvider.create(context)
         provider = p
 
         analyzer = Analyzer(exercise, targetReps).also { a ->
@@ -68,7 +78,11 @@ class MotionAnalysisService(private val context: Context) {
             a.onFeedback = { i -> onFeedback?.invoke(i) }
             a.onTarget = { onTarget?.invoke() }
         }
-        _state.value = MotionState(providerId = p.id, providerLabel = p.label)
+        _state.value = MotionState(
+            providerId = p?.id ?: "none",
+            providerLabel = p?.label ?: "IA indisponível",
+            poseUnavailable = p == null
+        )
     }
 
     fun start() { analyzer?.start(); _state.value = _state.value.copy(running = true, paused = false) }
