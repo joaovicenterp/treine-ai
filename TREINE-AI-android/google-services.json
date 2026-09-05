@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "612134941837",
+    "project_id": "treine-ai",
+    "storage_bucket": "treine-ai.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:612134941837:android:8f66c331ec449cfd281ec4",
+        "android_client_info": {
+          "package_name": "com.treineai.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCwAVurxCgRQevOajme2q6_3-8YKmAgRyE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
